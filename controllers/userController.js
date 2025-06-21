@@ -54,7 +54,8 @@ export const getOnlineUsers = async (req, res) => {
 export const getAllUsers = async (req, res) => {
     try {
         console.log('getAllUsers called by user:', req.user?.id);
-        const users = await User.find({ _id: { $ne: req.user.id } }).select('-password');
+        // Include the current user in the user list
+        const users = await User.find().select('-password');
         console.log('Users returned:', users.map(u => ({ id: u._id, name: u.name, email: u.email })));
         res.status(200).json(users);
     } catch (err) {
