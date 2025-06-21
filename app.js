@@ -15,7 +15,10 @@ import chatRoutes from './routes/chatRoutes.js';
 
 
 dotenv.config();
+
 const app = express();
+
+app.set('trust proxy', 1);
 
 // Security Headers Middleware
 app.use((req, res, next) => {
