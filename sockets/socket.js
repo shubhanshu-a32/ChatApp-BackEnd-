@@ -145,7 +145,7 @@ export const initSocket = (server) => {
             let onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar _id');
             // Ensure all _id fields are strings
             onlineUsers = onlineUsers.map(u => ({ ...u.toObject(), _id: String(u._id) }));
-            console.log(`📋 Sending online users to new user:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
+            console.log('SOCKET: Emitting online-users:', JSON.stringify(onlineUsers, null, 2));
             socket.emit('online-users', onlineUsers);
         } catch (error) {
             console.error('Error handling user connection:', error);
@@ -160,7 +160,7 @@ export const initSocket = (server) => {
                 let onlineUsers = await User.find({ _id: { $in: onlineUserIds } }, 'name _id');
                 // Ensure all _id fields are strings
                 onlineUsers = onlineUsers.map(u => ({ ...u.toObject(), _id: String(u._id) }));
-                console.log(`📡 Sending online users to user ${userId}:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
+                console.log('SOCKET: Emitting online-users:', JSON.stringify(onlineUsers, null, 2));
                 socket.emit('online-users', onlineUsers);
             } catch (error) {
                 console.error('Error fetching online users on request:', error);
