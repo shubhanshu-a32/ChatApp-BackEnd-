@@ -18,12 +18,22 @@ mongoose.connect(process.env.MONGO_URI, {
     console.log('❌ MongoDB connection error:', err.message);
 });
 
-//Connect to Redis
-redisClient.connect().then(() => {
-    console.log('✅ Redis connected');
-}).catch((err) => {
-    console.log('❌ Redis connection error:', err.message);
-});
+//Connect to Redis with better error handling
+const connectRedis = async () => {
+    try {
+        if (!redisClient.isOpen) {
+            await redisClient.connect();
+            console.log('✅ Redis connected');
+        }
+    } catch (err) {
+        console.log('❌ Redis connection error:', err.message);
+        // Don't retry immediately to avoid spam
+        console.log('⚠️ Continuing without Redis - some features may be limited');
+    }
+};
+
+// Try to connect to Redis once
+connectRedis();
 
 //Create HTTP Server
 const server = app.listen(PORT, () => {

@@ -16,6 +16,19 @@ const verifyToken = async (token) => {
     }
 };
 
+// Helper function to safely execute Redis operations
+const safeRedisOperation = async (operation) => {
+    try {
+        if (redisClient.isReady) {
+            return await operation();
+        }
+        return null;
+    } catch (error) {
+        console.error('Redis operation failed:', error.message);
+        return null;
+    }
+};
+
 export const initSocket = (server) => {
     io = new Server(server, {
         cors: {
@@ -69,8 +82,8 @@ export const initSocket = (server) => {
         const userId = socket.user._id;
 
         try {
-            // Add user to online users set
-            await redisClient.sAdd('onlineUsers', userId);
+            // Add user to online users set (Redis)
+            await safeRedisOperation(() => redisClient.sAdd('onlineUsers', userId));
             
             // Update user's online status in database
             await User.findByIdAndUpdate(userId, { isOnline: true });
@@ -79,7 +92,7 @@ export const initSocket = (server) => {
             socket.broadcast.emit('user-online', socket.user);
             
             // Send current online users to the new user
-            const onlineUserIds = await redisClient.sMembers('onlineUsers');
+            const onlineUserIds = await safeRedisOperation(() => redisClient.sMembers('onlineUsers')) || [];
             const onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar');
             socket.emit('online-users', onlineUsers);
         } catch (error) {
@@ -89,7 +102,7 @@ export const initSocket = (server) => {
         // Listen for a request to get the initial online users
         socket.on('get-online-users', async () => {
             try {
-                const onlineUserIds = await redisClient.sMembers('onlineUsers');
+                const onlineUserIds = await safeRedisOperation(() => redisClient.sMembers('onlineUsers')) || [];
                 const onlineUsers = await User.find({ _id: { $in: onlineUserIds } }, 'name _id');
                 socket.emit('online-users', onlineUsers);
             } catch (error) {
@@ -128,8 +141,8 @@ export const initSocket = (server) => {
             console.log(`❌ Client disconnected: ${socket.id}`);
 
             try {
-                // Remove user from online users set
-                await redisClient.sRem('onlineUsers', userId);
+                // Remove user from online users set (Redis)
+                await safeRedisOperation(() => redisClient.sRem('onlineUsers', userId));
                 
                 // Update user's online status in database
                 await User.findByIdAndUpdate(userId, { isOnline: false });

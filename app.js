@@ -4,8 +4,9 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import passport from 'passport';
 import './config/passport.js';
-import {apiLimiter} from './middleware/rateLimiter.js';
+import {createApiLimiter, apiLimiter} from './middleware/rateLimiter.js';
 import {notFound, errorHandler} from './middleware/errorHandler.js';
+import redisClient from './config/redis.js';
 
 //Routes
 import authRoutes from './routes/authRoutes.js';
@@ -46,8 +47,27 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+// Initialize rate limiter after Redis is connected
+let redisApiLimiter = apiLimiter; // Default to in-memory limiter
+
+const initializeRateLimiter = async () => {
+    try {
+        if (redisClient.isReady) {
+            redisApiLimiter = createApiLimiter();
+            console.log('✅ Redis rate limiter initialized');
+        }
+    } catch (error) {
+        console.log('⚠️ Using in-memory rate limiter:', error.message);
+    }
+};
+
+// Check Redis connection status and initialize rate limiter
+redisClient.on('ready', initializeRateLimiter);
+
 //Rate-Limiting
-app.use('/api', apiLimiter);
+app.use('/api', (req, res, next) => {
+    redisApiLimiter(req, res, next);
+});
 
 //Initialize Passport
 app.use(passport.initialize());
