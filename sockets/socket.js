@@ -142,7 +142,9 @@ export const initSocket = (server) => {
             console.log(`📋 Fetching current online users for user ${userId}`);
             const onlineUserIds = await getOnlineUsersFromStore();
             console.log(`📋 Online user IDs from Redis:`, onlineUserIds);
-            const onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar _id');
+            let onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar _id');
+            // Ensure all _id fields are strings
+            onlineUsers = onlineUsers.map(u => ({ ...u.toObject(), _id: String(u._id) }));
             console.log(`📋 Sending online users to new user:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
             socket.emit('online-users', onlineUsers);
         } catch (error) {
@@ -155,7 +157,9 @@ export const initSocket = (server) => {
             try {
                 const onlineUserIds = await getOnlineUsersFromStore();
                 console.log(`📡 Online user IDs from Redis for request:`, onlineUserIds);
-                const onlineUsers = await User.find({ _id: { $in: onlineUserIds } }, 'name _id');
+                let onlineUsers = await User.find({ _id: { $in: onlineUserIds } }, 'name _id');
+                // Ensure all _id fields are strings
+                onlineUsers = onlineUsers.map(u => ({ ...u.toObject(), _id: String(u._id) }));
                 console.log(`📡 Sending online users to user ${userId}:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
                 socket.emit('online-users', onlineUsers);
             } catch (error) {
