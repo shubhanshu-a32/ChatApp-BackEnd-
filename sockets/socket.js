@@ -5,10 +5,14 @@ import User from '../models/User.js';
 
 let io;
 
+// In-memory fallback for online users when Redis is not available
+const inMemoryOnlineUsers = new Set();
+
 const verifyToken = async (token) => {
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId).select('-password');
+        const jwtSecret = process.env.JWT_SECRET || 'fallback-jwt-secret-for-development';
+        const decoded = jwt.verify(token, jwtSecret);
+        const user = await User.findById(decoded.id).select('-password');
         return user;
     } catch (error) {
         console.error('Token verification error:', error);
@@ -16,17 +20,57 @@ const verifyToken = async (token) => {
     }
 };
 
-// Helper function to safely execute Redis operations
+// Helper function to safely execute Redis operations with fallback
 const safeRedisOperation = async (operation) => {
     try {
+        console.log('🔴 Redis client ready status:', redisClient.isReady);
         if (redisClient.isReady) {
-            return await operation();
+            const result = await operation();
+            console.log('🔴 Redis operation successful:', result);
+            return result;
+        } else {
+            console.log('🔴 Redis client not ready, using in-memory fallback');
+            return null;
         }
-        return null;
     } catch (error) {
-        console.error('Redis operation failed:', error.message);
+        console.error('🔴 Redis operation failed:', error.message);
         return null;
     }
+};
+
+// Helper function to add user to online users (Redis or in-memory)
+const addUserToOnline = async (userId) => {
+    const redisResult = await safeRedisOperation(() => redisClient.sAdd('onlineUsers', userId));
+    if (redisResult === null) {
+        // Redis not available, use in-memory
+        inMemoryOnlineUsers.add(userId);
+        console.log('📝 Added user to in-memory online users:', userId);
+        return true;
+    }
+    return redisResult;
+};
+
+// Helper function to remove user from online users (Redis or in-memory)
+const removeUserFromOnline = async (userId) => {
+    const redisResult = await safeRedisOperation(() => redisClient.sRem('onlineUsers', userId));
+    if (redisResult === null) {
+        // Redis not available, use in-memory
+        inMemoryOnlineUsers.delete(userId);
+        console.log('🗑️ Removed user from in-memory online users:', userId);
+        return true;
+    }
+    return redisResult;
+};
+
+// Helper function to get online users (Redis or in-memory)
+const getOnlineUsersFromStore = async () => {
+    const redisResult = await safeRedisOperation(() => redisClient.sMembers('onlineUsers'));
+    if (redisResult === null) {
+        // Redis not available, use in-memory
+        console.log('📋 Getting online users from in-memory store:', Array.from(inMemoryOnlineUsers));
+        return Array.from(inMemoryOnlineUsers);
+    }
+    return redisResult;
 };
 
 export const initSocket = (server) => {
@@ -77,23 +121,29 @@ export const initSocket = (server) => {
     });
 
     io.on('connection', async (socket) => {
-        console.log(`🔌New client connected: ${socket.id}`);
+        console.log(`🔌New client connected: ${socket.id}, User: ${socket.user.name} (${socket.user._id})`);
 
         const userId = socket.user._id;
 
         try {
             // Add user to online users set (Redis)
-            await safeRedisOperation(() => redisClient.sAdd('onlineUsers', userId));
+            console.log(`📝 Adding user ${userId} to online users in Redis`);
+            await addUserToOnline(userId);
             
             // Update user's online status in database
+            console.log(`📝 Updating user ${userId} online status in database`);
             await User.findByIdAndUpdate(userId, { isOnline: true });
             
             // Notify others that user is online
+            console.log(`📢 Broadcasting user-online event for user ${userId}`);
             socket.broadcast.emit('user-online', socket.user);
             
             // Send current online users to the new user
-            const onlineUserIds = await safeRedisOperation(() => redisClient.sMembers('onlineUsers')) || [];
-            const onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar');
+            console.log(`📋 Fetching current online users for user ${userId}`);
+            const onlineUserIds = await getOnlineUsersFromStore();
+            console.log(`📋 Online user IDs from Redis:`, onlineUserIds);
+            const onlineUsers = await User.find({_id: {$in: onlineUserIds}}, 'name email avatar _id');
+            console.log(`📋 Sending online users to new user:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
             socket.emit('online-users', onlineUsers);
         } catch (error) {
             console.error('Error handling user connection:', error);
@@ -101,9 +151,12 @@ export const initSocket = (server) => {
 
         // Listen for a request to get the initial online users
         socket.on('get-online-users', async () => {
+            console.log(`📡 User ${userId} requested online users`);
             try {
-                const onlineUserIds = await safeRedisOperation(() => redisClient.sMembers('onlineUsers')) || [];
+                const onlineUserIds = await getOnlineUsersFromStore();
+                console.log(`📡 Online user IDs from Redis for request:`, onlineUserIds);
                 const onlineUsers = await User.find({ _id: { $in: onlineUserIds } }, 'name _id');
+                console.log(`📡 Sending online users to user ${userId}:`, onlineUsers.map(u => ({ id: u._id, name: u.name })));
                 socket.emit('online-users', onlineUsers);
             } catch (error) {
                 console.error('Error fetching online users on request:', error);
@@ -138,16 +191,19 @@ export const initSocket = (server) => {
 
         //Handle disconnect
         socket.on('disconnect', async () => {
-            console.log(`❌ Client disconnected: ${socket.id}`);
+            console.log(`❌ Client disconnected: ${socket.id}, User: ${socket.user.name} (${socket.user._id})`);
 
             try {
                 // Remove user from online users set (Redis)
-                await safeRedisOperation(() => redisClient.sRem('onlineUsers', userId));
+                console.log(`🗑️ Removing user ${userId} from online users in Redis`);
+                await removeUserFromOnline(userId);
                 
                 // Update user's online status in database
+                console.log(`🗑️ Updating user ${userId} offline status in database`);
                 await User.findByIdAndUpdate(userId, { isOnline: false });
                 
                 // Notify others that user is offline
+                console.log(`📢 Broadcasting user-offline event for user ${userId}`);
                 socket.broadcast.emit('user-offline', { userId });
             } catch (error) {
                 console.error('Error handling user disconnection:', error);

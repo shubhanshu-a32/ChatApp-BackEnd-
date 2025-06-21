@@ -30,7 +30,7 @@ if (process.env.REDIS_URL) {
         },
     });
 } else {
-    // Fallback to individual configuration
+    // Fallback to individual configuration with defaults
     redisClient = createClient({
         socket: {
             host: process.env.REDIS_HOST || 'localhost',
@@ -39,28 +39,45 @@ if (process.env.REDIS_URL) {
             connectTimeout: 10000,
             lazyConnect: true,
         },
-        password: process.env.REDIS_PASSWORD,
+        password: process.env.REDIS_PASSWORD || undefined,
     });
 }
 
 redisClient.on('error', (err) => {
     console.error('Redis error', err);
+    // Don't crash the app if Redis is not available
+    console.log('⚠️ Continuing without Redis - online users tracking will be limited');
 });
 
 redisClient.on('connect', () => {
-    console.log('Connected to Redis');
+    console.log('✅ Connected to Redis');
 });
 
 redisClient.on('ready', () => {
-    console.log('Redis client ready');
+    console.log('✅ Redis client ready');
 });
 
 redisClient.on('end', () => {
-    console.log('Redis connection ended');
+    console.log('🔌 Redis connection ended');
 });
 
 redisClient.on('reconnecting', () => {
-    console.log('Redis reconnecting...');
+    console.log('🔄 Redis reconnecting...');
 });
+
+// Try to connect to Redis
+const connectRedis = async () => {
+    try {
+        if (!redisClient.isOpen) {
+            await redisClient.connect();
+        }
+    } catch (err) {
+        console.log('❌ Redis connection failed:', err.message);
+        console.log('⚠️ Continuing without Redis - online users tracking will be limited');
+    }
+};
+
+// Connect on import
+connectRedis();
 
 export default redisClient;

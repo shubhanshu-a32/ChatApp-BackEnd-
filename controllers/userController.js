@@ -1,6 +1,26 @@
 import User from '../models/User.js';
 import redisClient from '../config/redis.js';
 
+// In-memory fallback for online users when Redis is not available
+const inMemoryOnlineUsers = new Set();
+
+// Helper function to get online users (Redis or in-memory)
+const getOnlineUsersFromStore = async () => {
+    try {
+        if (redisClient.isReady) {
+            return await redisClient.sMembers('onlineUsers');
+        } else {
+            // Redis not available, use in-memory
+            console.log('📋 Getting online users from in-memory store:', Array.from(inMemoryOnlineUsers));
+            return Array.from(inMemoryOnlineUsers);
+        }
+    } catch (error) {
+        console.error('Redis operation failed:', error.message);
+        // Fallback to in-memory
+        return Array.from(inMemoryOnlineUsers);
+    }
+};
+
 //Get current User
 export const getMe = async (req, res) => {
     try {
@@ -15,7 +35,7 @@ export const getMe = async (req, res) => {
 //Get online users from Redis
 export const getOnlineUsers = async (req, res) => {
     try {
-        const onlineUsers = await redisClient.sMembers('onlineUsers');
+        const onlineUsers = await getOnlineUsersFromStore();
         
         // Get user details for each online user
         const users = await User.find(
