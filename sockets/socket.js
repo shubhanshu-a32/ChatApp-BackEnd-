@@ -40,6 +40,7 @@ const safeRedisOperation = async (operation) => {
 
 // Helper function to add user to online users (Redis or in-memory)
 const addUserToOnline = async (userId) => {
+    userId = String(userId);
     const redisResult = await safeRedisOperation(() => redisClient.sAdd('onlineUsers', userId));
     if (redisResult === null) {
         // Redis not available, use in-memory
@@ -52,6 +53,7 @@ const addUserToOnline = async (userId) => {
 
 // Helper function to remove user from online users (Redis or in-memory)
 const removeUserFromOnline = async (userId) => {
+    userId = String(userId);
     const redisResult = await safeRedisOperation(() => redisClient.sRem('onlineUsers', userId));
     if (redisResult === null) {
         // Redis not available, use in-memory
@@ -68,9 +70,9 @@ const getOnlineUsersFromStore = async () => {
     if (redisResult === null) {
         // Redis not available, use in-memory
         console.log('📋 Getting online users from in-memory store:', Array.from(inMemoryOnlineUsers));
-        return Array.from(inMemoryOnlineUsers);
+        return Array.from(inMemoryOnlineUsers).map(String);
     }
-    return redisResult;
+    return redisResult.map(String);
 };
 
 export const initSocket = (server) => {
